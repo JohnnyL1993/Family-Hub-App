@@ -130,6 +130,7 @@ fun FamilySavingsApp(viewModel: SavingsViewModel, chatViewModel: ChatViewModel, 
     var switchPasswordError by remember { mutableStateOf("") }
     var goalToToggleComplete by remember { mutableStateOf<SavingsGoal?>(null) }
     var goalToDelete by remember { mutableStateOf<SavingsGoal?>(null) }
+    var goalToEdit by remember { mutableStateOf<SavingsGoal?>(null) }
 
     AnimatedContent(
         targetState = activeScreen,
@@ -477,6 +478,7 @@ fun FamilySavingsApp(viewModel: SavingsViewModel, chatViewModel: ChatViewModel, 
                                                         walletDialogInitialIsDeposit = false
                                                     },
                                                     onDeleteGoalClick = { goal -> goalToDelete = goal },
+                                                    onEditGoalClick = { goal -> goalToEdit = goal },
                                                     onToggleGoalCompletionClick = { goal -> goalToToggleComplete = goal },
                                                     onDeleteMemberClick = { showConfirmDeleteMember = selectedItem.member },
                                                     onDeleteContribution = { contribution -> viewModel.deleteContribution(contribution) },
@@ -646,108 +648,35 @@ fun FamilySavingsApp(viewModel: SavingsViewModel, chatViewModel: ChatViewModel, 
 
     // 2. Add Savings Goal Dialog
     showAddGoalDialogForMemberId?.let { memberId ->
-        var goalTitle by remember { mutableStateOf("") }
-        var targetAmountText by remember { mutableStateOf("") }
-        var purchaseUrl by remember { mutableStateOf("") }
-        var hasError by remember { mutableStateOf(false) }
-
-        Dialog(onDismissRequest = { showAddGoalDialogForMemberId = null }) {
-            Card(
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp)
-                    .testTag("add_goal_dialog")
-            ) {
-                Column(
-                    modifier = Modifier
-                        .padding(24.dp)
-                        .fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    Text(
-                        text = "Create Savings Goal",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
-                    )
-
-                    OutlinedTextField(
-                        value = goalTitle,
-                        onValueChange = { goalTitle = it },
-                        label = { Text("What are you saving for?") },
-                        placeholder = { Text("e.g., Bike, Vacation, College") },
-                        singleLine = true,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("input_goal_title")
-                    )
-
-                    OutlinedTextField(
-                        value = targetAmountText,
-                        onValueChange = {
-                            targetAmountText = it
-                            hasError = it.toDoubleOrNull() == null || it.toDouble() <= 0
-                        },
-                        label = { Text("Target Amount ($)") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        singleLine = true,
-                        isError = hasError,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("input_goal_target")
-                    )
-
-                    OutlinedTextField(
-                        value = purchaseUrl,
-                        onValueChange = { purchaseUrl = it },
-                        label = { Text("Purchase / Shop Link (Optional)") },
-                        placeholder = { Text("e.g., https://amazon.com/...") },
-                        singleLine = true,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("input_goal_purchase_url")
-                    )
-
-                    if (hasError) {
-                        Text(
-                            text = "Please enter a valid positive number",
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        TextButton(onClick = { showAddGoalDialogForMemberId = null }) {
-                            Text("Cancel")
-                        }
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Button(
-                            onClick = {
-                                val amount = targetAmountText.toDoubleOrNull()
-                                if (goalTitle.isNotBlank() && amount != null && amount > 0) {
-                                    viewModel.addGoal(
-                                        memberId, 
-                                        goalTitle.trim(), 
-                                        amount, 
-                                        purchaseUrl.trim().ifEmpty { null }
-                                    )
-                                    showAddGoalDialogForMemberId = null
-                                }
-                            },
-                            enabled = goalTitle.isNotBlank() && targetAmountText.toDoubleOrNull() != null && targetAmountText.toDouble() > 0,
-                            modifier = Modifier.testTag("btn_save_goal")
-                        ) {
-                            Text("Create")
-                        }
-                    }
-                }
+        GoalFormDialog(
+            dialogTitle = "Create Savings Goal",
+            confirmLabel = "Create",
+            dialogTestTag = "add_goal_dialog",
+            confirmTestTag = "btn_save_goal",
+            onDismiss = { showAddGoalDialogForMemberId = null },
+            onConfirm = { title, amount, url ->
+                viewModel.addGoal(memberId, title, amount, url)
+                showAddGoalDialogForMemberId = null
             }
-        }
+        )
+    }
+
+    // Edit Savings Goal Dialog - e.g. when the item's price changes after the goal was created
+    goalToEdit?.let { goal ->
+        GoalFormDialog(
+            dialogTitle = "Edit Savings Goal",
+            confirmLabel = "Save",
+            initialTitle = goal.title,
+            initialTargetAmount = goal.targetAmount,
+            initialPurchaseUrl = goal.purchaseUrl.orEmpty(),
+            dialogTestTag = "edit_goal_dialog",
+            confirmTestTag = "btn_save_edit_goal",
+            onDismiss = { goalToEdit = null },
+            onConfirm = { title, amount, url ->
+                viewModel.updateGoal(goal, title, amount, url)
+                goalToEdit = null
+            }
+        )
     }
 
     // 3. Add Contribution Dialog
@@ -1834,6 +1763,7 @@ fun MemberDetailView(
     onDepositToWalletClick: () -> Unit,
     onDeductFromWalletClick: () -> Unit,
     onDeleteGoalClick: (SavingsGoal) -> Unit,
+    onEditGoalClick: (SavingsGoal) -> Unit,
     onToggleGoalCompletionClick: (SavingsGoal) -> Unit,
     onDeleteMemberClick: () -> Unit,
     onDeleteContribution: (Contribution) -> Unit,
@@ -1844,6 +1774,7 @@ fun MemberDetailView(
     val isOwnProfile = activeMemberId == memberPerformance.member.id
     val canAddGoal = isActiveAdmin || isOwnProfile
     val canDeleteGoal = isActiveAdmin
+    val canEditGoal = isActiveAdmin || isOwnProfile
     val canDepositToGoal = isActiveAdmin || isOwnProfile
     val canAddWalletFunds = isActiveAdmin
 
@@ -2394,12 +2325,128 @@ fun MemberDetailView(
                     memberColor = memberColor,
                     canDepositToGoal = canDepositToGoal,
                     canDeleteGoal = canDeleteGoal,
+                    canEditGoal = canEditGoal,
                     onDepositClick = { onDepositClick(goalItem.goal) },
                     onWithdrawClick = { onWithdrawClick(goalItem.goal) },
                     onDeleteGoalClick = { onDeleteGoalClick(goalItem.goal) },
+                    onEditGoalClick = { onEditGoalClick(goalItem.goal) },
                     onToggleGoalCompletionClick = { onToggleGoalCompletionClick(goalItem.goal) },
                     onDeleteContribution = onDeleteContribution
                 )
+            }
+        }
+    }
+}
+
+// Shared create/edit form for a savings goal; initial values prefill it when editing.
+@Composable
+fun GoalFormDialog(
+    dialogTitle: String,
+    confirmLabel: String,
+    dialogTestTag: String,
+    confirmTestTag: String,
+    onDismiss: () -> Unit,
+    onConfirm: (title: String, targetAmount: Double, purchaseUrl: String?) -> Unit,
+    initialTitle: String = "",
+    initialTargetAmount: Double? = null,
+    initialPurchaseUrl: String = ""
+) {
+    var goalTitle by remember { mutableStateOf(initialTitle) }
+    var targetAmountText by remember {
+        // Show 1200.0 as "1200" but keep real decimals like 12.5
+        mutableStateOf(initialTargetAmount?.let { if (it % 1.0 == 0.0) it.toLong().toString() else it.toString() } ?: "")
+    }
+    var purchaseUrl by remember { mutableStateOf(initialPurchaseUrl) }
+    var hasError by remember { mutableStateOf(false) }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+                .testTag(dialogTestTag)
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(24.dp)
+                    .fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Text(
+                    text = dialogTitle,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+
+                OutlinedTextField(
+                    value = goalTitle,
+                    onValueChange = { goalTitle = it },
+                    label = { Text("What are you saving for?") },
+                    placeholder = { Text("e.g., Bike, Vacation, College") },
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("input_goal_title")
+                )
+
+                OutlinedTextField(
+                    value = targetAmountText,
+                    onValueChange = {
+                        targetAmountText = it
+                        hasError = it.toDoubleOrNull() == null || it.toDouble() <= 0
+                    },
+                    label = { Text("Target Amount ($)") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    isError = hasError,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("input_goal_target")
+                )
+
+                OutlinedTextField(
+                    value = purchaseUrl,
+                    onValueChange = { purchaseUrl = it },
+                    label = { Text("Purchase / Shop Link (Optional)") },
+                    placeholder = { Text("e.g., https://amazon.com/...") },
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("input_goal_purchase_url")
+                )
+
+                if (hasError) {
+                    Text(
+                        text = "Please enter a valid positive number",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(onClick = onDismiss) {
+                        Text("Cancel")
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(
+                        onClick = {
+                            val amount = targetAmountText.toDoubleOrNull()
+                            if (goalTitle.isNotBlank() && amount != null && amount > 0) {
+                                onConfirm(goalTitle.trim(), amount, purchaseUrl.trim().ifEmpty { null })
+                            }
+                        },
+                        enabled = goalTitle.isNotBlank() && targetAmountText.toDoubleOrNull() != null && targetAmountText.toDouble() > 0,
+                        modifier = Modifier.testTag(confirmTestTag)
+                    ) {
+                        Text(confirmLabel)
+                    }
+                }
             }
         }
     }
@@ -2432,9 +2479,11 @@ fun SavingsGoalCard(
     memberColor: Color,
     canDepositToGoal: Boolean,
     canDeleteGoal: Boolean,
+    canEditGoal: Boolean,
     onDepositClick: () -> Unit,
     onWithdrawClick: () -> Unit,
     onDeleteGoalClick: () -> Unit,
+    onEditGoalClick: () -> Unit,
     onToggleGoalCompletionClick: () -> Unit,
     onDeleteContribution: (Contribution) -> Unit
 ) {
@@ -2582,7 +2631,23 @@ fun SavingsGoalCard(
                         fontWeight = FontWeight.Bold,
                         color = memberColor
                     )
-                    
+
+                    if (canEditGoal) {
+                        IconButton(
+                            onClick = onEditGoalClick,
+                            modifier = Modifier
+                                .size(28.dp)
+                                .testTag("btn_edit_goal_${goalItem.goal.title.lowercase()}")
+                        ) {
+                            Icon(
+                                Icons.Default.Edit,
+                                contentDescription = "Edit savings goal",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+
                     if (canDeleteGoal) {
                         IconButton(
                             onClick = onDeleteGoalClick,

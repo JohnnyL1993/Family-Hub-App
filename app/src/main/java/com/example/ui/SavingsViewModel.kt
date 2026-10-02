@@ -738,6 +738,14 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun updateGoal(goal: SavingsGoal, title: String, targetAmount: Double, purchaseUrl: String?) {
+        viewModelScope.launch {
+            val updatedGoal = goal.copy(title = title, targetAmount = targetAmount, purchaseUrl = purchaseUrl)
+            repository.updateGoal(updatedGoal)
+            pushGoal(updatedGoal)
+        }
+    }
+
     fun addContribution(goalId: Int, amount: Double, note: String?) {
         viewModelScope.launch {
             val goal = repository.allGoals.first().find { it.id == goalId }
