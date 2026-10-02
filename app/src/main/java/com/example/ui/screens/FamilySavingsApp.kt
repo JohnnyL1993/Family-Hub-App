@@ -2567,7 +2567,11 @@ fun SavingsGoalCard(
                                 text = "Added ${goalSdf.format(Date(goalItem.goal.createdAt))}",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontWeight = FontWeight.Normal
+                                fontWeight = FontWeight.Normal,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                // Weighted so it shrinks before the Buy Link when the header is crowded
+                                modifier = Modifier.weight(1f, fill = false)
                             )
                             goalItem.goal.purchaseUrl?.let { url ->
                                 Text(
@@ -2581,6 +2585,8 @@ fun SavingsGoalCard(
                                     style = MaterialTheme.typography.bodySmall,
                                     fontWeight = FontWeight.Bold,
                                     textDecoration = TextDecoration.Underline,
+                                    maxLines = 1,
+                                    softWrap = false,
                                     modifier = Modifier
                                         .clickable {
                                             try {
